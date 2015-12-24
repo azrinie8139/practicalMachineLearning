@@ -1,0 +1,138 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "RINIE"
+date: "24 Disember 2015"
+output: html_document
+---
+
+#Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+#Prediction Algorithm
+
+Trial with three models such as Recursive Partitioning and Regression Tree (rpart), Generalised Boosted Regression Model (gbm) and Linear Discriminant Analysis (lda).
+
+```{r}
+library(ggplot2)
+library(caret)
+```
+
+```{r}
+library(e1071)
+library(gbm)
+```
+
+```{r}
+library(doParallel)
+```
+
+```{r}
+library(survival)
+library(splines)
+library(plyr)
+setwd("~/GitHub/PracticalMachineLearning")
+```
+
+#Load Data
+
+1. Read Test and Training Data
+2. Replace Missing Value
+
+```{r}
+training <- read.csv("~/GitHub/PracticalMachineLearning/pml-training.csv", na.strings=c("#DIV/0!"), row.names = 1)
+testing <- read.csv("~/GitHub/PracticalMachineLearning/pml-testing.csv", na.strings=c("#DIV/0!"), row.names = 1)
+```
+
+```{r}
+training <- training[, 6:dim(training)[2]]
+treshold <- dim(training)[1]*0.95
+gColumn <- !apply(training, 2, function(x) sum(is.na(x))>treshold || sum(x=="")>treshold)
+training <- training[, gColumn]
+bColumn <- nearZeroVar(training, saveMetrics=TRUE)
+training <- training[, bColumn$nzv==FALSE]
+training$classe = factor(training$classe)
+```
+
+3. Split Original Training Data and Cross Validation
+
+```{r}
+inTrain <- createDataPartition(training$classe, p=0.6)[[1]]
+crossValid <- training[-inTrain,]
+training <- training[inTrain,]
+inTrain <- createDataPartition(crossValid$classe, p=0.75)[[1]]
+crossValid_test <- crossValid[-inTrain,]
+crossValid <- crossValid[inTrain,]
+
+testing <- testing[, 6:dim(testing)[2]]
+testing <- testing[, gColumn]
+testing$classe <- NA
+testing <- testing[, bColumn$nzv==FALSE]
+```
+
+4. Train Using Three Models
+
+```{r}
+#model1 <- train(classe ~ ., data=training, method="rpart")
+model2 <- train(classe ~ ., data=training, method="gbm")
+#model3 <- train(classe ~ ., data=training, method="lda")
+
+#predict1 <- predict(model1, crossValid)
+predict2 <- predict(model2, crossValid)
+#predict3 <- predict(model3, crossValid)
+```
+
+```{r}
+#confusionMatrix(predict1, crossValid$classe)
+confusionMatrix(predict2, crossValid$classe)
+#confusionMatrix(predict3, crossValid$classe)
+```
+
+```{r}
+#predict1 <- predict(model1, crossValid_test)
+predict2 <- predict(model2, crossValid_test)
+#predict3 <- predict(model3, crossValid_test)
+```
+
+```{r}
+#accuracy <- sum(predict1 == crossValid_test$classe) / length(predict1)
+accuracy <- sum(predict2 == crossValid_test$classe) / length(predict2)
+#accuracy <- sum(predict3 == crossValid_test$classe) / length(predict3)
+```
+
+The gbm prediction is better than either the rpart or lda models. The gbm model will be used as the sole prediction model. The confusion matrix created gives an accuracy of 98.73%.
+
+```{r}
+varImpRF <- train(classe ~ ., data = training, method="gbm")
+varImpObj <- varImp(varImpRF)
+plot(varImpObj, main = "Importance of Top 40 Variables", top = 40)
+```
+
+5. Preparing The Submission
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:20){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+x <- testing
+
+answers <- predict(model2, newdata=x)
+answers
+```
+
+```{r}
+pml_write_files(answers)
+```
